@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+
+# Add the project root to sys.path
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
 from fastapi import  Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,10 +12,10 @@ from datetime import datetime, timedelta
 from config import settings
 import requests
 import models
-import database
+from database import engine, SessionLocal
 from sqlalchemy.orm import Session
 
-models.database.Base.metadata.create_all(bind=database.engine) #create database tables
+models.database.Base.metadata.create_all(bind=engine) #create database tables
 
 app = FastAPI()
 
@@ -28,17 +34,18 @@ google_redirect_uri = settings.GOOGLE_REDIRECT_URI
 jwt_secret_key = settings.JWT_SECRET_KEY
 algorithm =settings.ALGORITHM
 access_token_expire_minutes = 10
+refresh_token_expire_minutes = 1440 # 1440 minutes = 1 day
 
 # Dependency
 def get_db():
-    db = database.SessionLocal()
+    db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
 def remove_expired_tokens(db: Session):
-    current_time = datetime.datetime.utcnow()
+    current_time = datetime.utcnow()
     db.query(models.RefreshToken).filter(models.RefreshToken.expires_at < current_time).delete()
     db.commit()
 
@@ -49,6 +56,7 @@ async def login_google():
 
 @app.get("/api/auth/callback/google")
 async def auth_google(code: str, db: Session = Depends(get_db)):
+    remove_expired_tokens(db)
     token_url = "https://accounts.google.com/o/oauth2/token"
     data = {
         "code": code,
@@ -65,10 +73,12 @@ async def auth_google(code: str, db: Session = Depends(get_db)):
         "name": users["name"],
         "email": users["email"],
         "picture": users["picture"]} 
+    
     jwt_token = create_jwt_token(data=jwt_token_data, expire_minutes=datetime.utcnow() + timedelta(minutes=access_token_expire_minutes))
-     # Create JWT refresh token (new functionality)
-    jwt_refresh_token = create_jwt_token(data={"sub": users["email"],"name": users["name"],
-        "email": users["email"],"picture": users["picture"]}, expire_minutes=datetime.utcnow() + timedelta(minutes=1440))  # 1440 minutes = 1 day
+    
+     # Create JWT refresh token 
+    jwt_refresh_token = create_jwt_token(data=data, expire_minutes=datetime.utcnow() + timedelta(minutes=refresh_token_expire_minutes))  
+    
     db.add(models.RefreshToken(token=jwt_refresh_token, user_email=users["email"], user_name=users["name"], user_img=users["picture"]))
     db.commit()
 
@@ -92,7 +102,9 @@ async def read_user(request: Request):
             user_data = {
                 "name": payload.get("name"),
                 "email": payload.get("email"),
-                "picture": payload.get("picture")
+                "picture": payload.get("picture"),
+                "expire": payload.get("exp")
+                
             }
             return user_data
         except JWTError as e:
@@ -106,7 +118,7 @@ async def read_user(request: Request):
 #     jwt_refresh_token = request.cookies.get('jwt_refresh')
 #     if jwt_refresh_token:
 #         db_token = db.query(models.RefreshToken).filter(models.RefreshToken.token == jwt_refresh_token).first()
-#         if db_token and not db_token.is_blacklisted and db_token.expires_at > datetime.datetime.utcnow():
+#         if db_token and not db_token.is_blacklisted and db_token.expires_at > datetime.utcnow():
 #             new_token_payload = {
 #                     "sub": db_token.user_email,
 #                     "name": db_token.user_name,
