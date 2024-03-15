@@ -14,6 +14,6 @@ class RefreshToken(database.Base):
     user_name = Column(String)
     user_img = Column(String)
     is_blacklisted = Column(Boolean, default=False)
-    expires_at = Column(DateTime, default=datetime.utcnow() + timedelta(days=1))
+    expires_at = Column(DateTime, default=datetime.utcnow() + timedelta(minutes=2))
 
 
