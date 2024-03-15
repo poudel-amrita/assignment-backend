@@ -4,6 +4,7 @@ from pathlib import Path
 # Add the project root to sys.path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
+
 from fastapi import  Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -74,10 +75,10 @@ async def auth_google(code: str, db: Session = Depends(get_db)):
         "email": users["email"],
         "picture": users["picture"]} 
     
-    jwt_token = create_jwt_token(data=jwt_token_data, expire_minutes=datetime.utcnow() + timedelta(minutes=access_token_expire_minutes))
+    jwt_token = create_jwt_token(data=jwt_token_data, expire_minutes=datetime.now() + timedelta(minutes=access_token_expire_minutes))
     
      # Create JWT refresh token 
-    jwt_refresh_token = create_jwt_token(data=data, expire_minutes=datetime.utcnow() + timedelta(minutes=refresh_token_expire_minutes))  
+    jwt_refresh_token = create_jwt_token(data=data, expire_minutes=datetime.now() + timedelta(minutes=refresh_token_expire_minutes))  
     
     db.add(models.RefreshToken(token=jwt_refresh_token, user_email=users["email"], user_name=users["name"], user_img=users["picture"]))
     db.commit()
@@ -102,9 +103,7 @@ async def read_user(request: Request):
             user_data = {
                 "name": payload.get("name"),
                 "email": payload.get("email"),
-                "picture": payload.get("picture"),
-                "expire": payload.get("exp")
-                
+                "picture": payload.get("picture")
             }
             return user_data
         except JWTError as e:
